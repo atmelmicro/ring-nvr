@@ -3,13 +3,9 @@ FROM docker.io/oven/bun:alpine AS frontend-builder
 
 WORKDIR /web
 
-COPY web/package.json ./
-COPY web/bun.lock ./
-RUN bun install --frozen-lockfile
-
 COPY web/ ./
+RUN bun install --frozen-lockfile
 RUN bun run build
-
 
 # Stage 2: final image with Python backend + built frontend
 FROM python:3.12-slim
