@@ -22,7 +22,7 @@ RING_USER_AGENT = "RingNVR-1.0"
 
 class RingManager:
     def __init__(self) -> None:
-        self.storage_path = "./app/recordings"
+        self.storage_path = "/nvr/recordings"
         self.duration = 150
         self.autodelete_days: int = 14
 

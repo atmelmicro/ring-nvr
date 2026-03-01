@@ -12,7 +12,7 @@ from passlib.context import CryptContext
 
 
 def get_config() -> dict[str, Any]:
-    with open("config.yaml", "r", encoding="utf-8") as config_file:
+    with open("/nvr/config.yaml", "r", encoding="utf-8") as config_file:
         loaded = yaml.safe_load(config_file)
     return loaded if isinstance(loaded, dict) else {}
 
@@ -36,7 +36,9 @@ def verify_password(plain_password: str, stored_password: str) -> bool:
     return secrets.compare_digest(plain_password, stored_password)
 
 
-def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
+def create_access_token(
+    data: dict[str, Any], expires_delta: timedelta | None = None
+) -> str:
     to_encode = data.copy()
     expires_in = expires_delta if expires_delta is not None else timedelta(minutes=15)
     to_encode.update({"exp": datetime.now(timezone.utc) + expires_in})

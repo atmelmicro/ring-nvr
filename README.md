@@ -29,8 +29,7 @@ Copy and edit `config.yaml` before running:
 docker build -t ring-nvr .
 docker run -d \
   -p 8000:8000 \
-  -v $(pwd)/config.yaml:/app/config.yaml \
-  -v $(pwd)/recordings:/app/app/recordings \
+  -v $(pwd)/nvr:/nvr \
   --name ring-nvr \
   ring-nvr
 ```

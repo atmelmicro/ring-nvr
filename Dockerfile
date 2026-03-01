@@ -33,12 +33,11 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
-COPY config.yaml ./
 
 # Serve the built frontend from the static directory
 COPY --from=frontend-builder /web/dist ./web/dist
 
-RUN mkdir -p ./app/recordings
+RUN mkdir -p /nvr
 
 EXPOSE 8000
 

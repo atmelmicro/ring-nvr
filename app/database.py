@@ -5,7 +5,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./nvr.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:////nvr/nvr.db"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
