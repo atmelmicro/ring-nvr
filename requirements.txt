@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pyyaml
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+ring-doorbell
+aiortc
+aiofiles
