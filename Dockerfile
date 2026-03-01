@@ -1,5 +1,5 @@
 # Stage 1: build the React frontend
-FROM oven-sh/bun:alpine AS frontend-builder
+FROM docker.io/oven/bun:alpine AS frontend-builder
 
 WORKDIR /web
 
