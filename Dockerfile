@@ -1,13 +1,14 @@
 # Stage 1: build the React frontend
-FROM node:20-alpine AS frontend-builder
+FROM oven-sh/bun:alpine AS frontend-builder
 
 WORKDIR /web
 
-COPY web/package*.json ./
-RUN npm ci
+COPY web/package.json ./
+COPY web/bun.lock ./
+RUN bun install --frozen-lockfile
 
 COPY web/ ./
-RUN npm run build
+RUN bun run build
 
 
 # Stage 2: final image with Python backend + built frontend
