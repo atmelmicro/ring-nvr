@@ -27,7 +27,7 @@ ALGORITHM = str(auth_config.get("algorithm", "HS256"))
 ACCESS_TOKEN_EXPIRE_MINUTES = int(auth_config.get("access_token_expire_minutes", 60))
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 
 
 def verify_password(plain_password: str, stored_password: str) -> bool:

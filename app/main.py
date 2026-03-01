@@ -6,9 +6,10 @@ from datetime import timedelta
 from os import path
 from typing import Annotated, Any, Generator
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, status
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from app import schemas
@@ -28,7 +29,39 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Ring NVR Backend")
 ring_manager = RingManager()
-oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/login", auto_error=False)
+
+# All API routes live under /api to match the frontend's axios baseURL
+api = APIRouter(prefix="/api")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Frontend static files
+# ─────────────────────────────────────────────────────────────────────────────
+
+_FRONTEND_DIST = path.join(path.dirname(__file__), "..", "web", "dist")
+
+if path.isdir(path.join(_FRONTEND_DIST, "assets")):
+    app.mount(
+        "/assets",
+        StaticFiles(directory=path.join(_FRONTEND_DIST, "assets")),
+        name="assets",
+    )
+
+
+def _serve_index() -> HTMLResponse:
+    index = path.join(_FRONTEND_DIST, "index.html")
+    if path.isfile(index):
+        with open(index, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    return HTMLResponse(
+        content="<p>Frontend not built. Run <code>bun run build</code> inside <code>web/</code>.</p>",
+        status_code=503,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DB helper
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -37,6 +70,11 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Lifecycle
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 @app.on_event("startup")
@@ -61,7 +99,7 @@ async def shutdown_event() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@app.post("/login")
+@api.post("/login")
 async def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 ) -> dict[str, str]:
@@ -99,21 +137,11 @@ async def login(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Health
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-@app.get("/")
-async def root() -> dict[str, str]:
-    return {"message": "Ring NVR Backend is running"}
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Recordings
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@app.get("/events")
+@api.get("/events")
 async def get_events(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[str, Depends(get_current_user)],
@@ -122,7 +150,7 @@ async def get_events(
     return db.query(RecordingEvent).order_by(RecordingEvent.created_at.desc()).all()
 
 
-@app.get("/recordings/{event_id}")
+@api.get("/recordings/{event_id}")
 async def get_recording(
     event_id: int,
     db: Annotated[Session, Depends(get_db)],
@@ -153,7 +181,7 @@ async def get_recording(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@app.get("/settings/ring/status")
+@api.get("/settings/ring/status")
 async def ring_status(
     current_user: Annotated[str, Depends(get_current_user)],
 ) -> dict[str, Any]:
@@ -166,7 +194,7 @@ async def ring_status(
     }
 
 
-@app.post("/settings/ring/login")
+@api.post("/settings/ring/login")
 async def ring_login(
     body: schemas.RingLoginRequest,
     current_user: Annotated[str, Depends(get_current_user)],
@@ -176,7 +204,7 @@ async def ring_login(
 
     Returns:
       {"status": "ok"}            – authenticated, no 2FA needed
-      {"status": "2fa_required"}  – caller must POST to /settings/ring/2fa
+      {"status": "2fa_required"}  – caller must POST to /api/settings/ring/2fa
       {"status": "error", "detail": "..."}
     """
     del current_user
@@ -188,12 +216,12 @@ async def ring_login(
     return result
 
 
-@app.post("/settings/ring/2fa")
+@api.post("/settings/ring/2fa")
 async def ring_submit_2fa(
     body: schemas.Ring2FARequest,
     current_user: Annotated[str, Depends(get_current_user)],
 ) -> dict[str, Any]:
-    """Submit the 2FA OTP code after /settings/ring/login returned 2fa_required."""
+    """Submit the 2FA OTP code after /api/settings/ring/login returned 2fa_required."""
     del current_user
     result = await ring_manager.ring_submit_2fa(body.code)
     if result["status"] == "error":
@@ -201,7 +229,7 @@ async def ring_submit_2fa(
     return result
 
 
-@app.post("/settings/ring/logout")
+@api.post("/settings/ring/logout")
 async def ring_logout(
     current_user: Annotated[str, Depends(get_current_user)],
 ) -> dict[str, str]:
@@ -216,7 +244,7 @@ async def ring_logout(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@app.get("/settings/storage")
+@api.get("/settings/storage")
 async def storage_stats(
     current_user: Annotated[str, Depends(get_current_user)],
 ) -> dict[str, Any]:
@@ -230,7 +258,7 @@ async def storage_stats(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@app.get("/settings/recording")
+@api.get("/settings/recording")
 async def get_recording_settings(
     current_user: Annotated[str, Depends(get_current_user)],
 ) -> RecordingSettings:
@@ -240,7 +268,7 @@ async def get_recording_settings(
     return RecordingSettings(**data)
 
 
-@app.put("/settings/recording")
+@api.put("/settings/recording")
 async def update_recording_settings(
     body: RecordingSettings,
     current_user: Annotated[str, Depends(get_current_user)],
@@ -262,7 +290,7 @@ async def update_recording_settings(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-@app.get("/settings/devices")
+@api.get("/settings/devices")
 async def list_devices(
     current_user: Annotated[str, Depends(get_current_user)],
 ) -> list[dict[str, Any]]:
@@ -274,6 +302,24 @@ async def list_devices(
             detail="Ring account not authenticated. Please log in via Settings.",
         )
     return ring_manager.get_devices()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Register the API router, then add SPA catch-all AFTER it
+# ─────────────────────────────────────────────────────────────────────────────
+
+app.include_router(api)
+
+
+@app.get("/")
+async def root() -> HTMLResponse:
+    return _serve_index()
+
+
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str) -> HTMLResponse:
+    """Return index.html for any non-API path so React Router can handle it."""
+    return _serve_index()
 
 
 if __name__ == "__main__":
