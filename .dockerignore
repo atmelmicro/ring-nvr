@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+venv/
+.venv/
+*.egg-info/
+
+# Node / frontend
+web/node_modules/
+web/dist/
+web/.cache/
+
+# Dev / editor
+.git/
+.gitignore
+.vscode/
+.idea/
+*.sw?
+*.suo
+.DS_Store
+
+# Secrets / local config
+*.env
+*.local
+.env.*
+config.yaml
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Docs
+README.md
