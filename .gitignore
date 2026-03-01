@@ -38,6 +38,5 @@ nvr.db
 config.yaml
 .idea/
 .vscode/
-.github/
 
 app/recordings/
