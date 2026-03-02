@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import timedelta
 from os import path
@@ -83,7 +82,7 @@ async def startup_event() -> None:
     try:
         await ring_manager.initialize()
         if ring_manager.ring_authenticated:
-            asyncio.create_task(ring_manager.start_listener())
+            await ring_manager.start_listener()
     except Exception:
         logger.exception("Failed to initialize Ring Manager")
 
