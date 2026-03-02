@@ -11,9 +11,10 @@ from typing import Any
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaRecorder
 from ring_doorbell import Auth, AuthenticationError, Requires2FAError, Ring
+from ring_doorbell.listen import RingEventListener
 from ring_doorbell.webrtcstream import RingWebRtcStream
 
-from app.database import RecordingEvent, RingToken, SessionLocal
+from app.database import ListenerCredentials, RecordingEvent, RingToken, SessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class RingManager:
         self.is_running = False
         self.active_recordings: set[str] = set()
         self._autodelete_task: asyncio.Task[None] | None = None
+        self._event_listener: RingEventListener | None = None
 
         # Pending 2FA auth object (waiting for OTP)
         self._pending_auth: Auth | None = None
@@ -90,6 +92,46 @@ class RingManager:
     def token_updated(self, token: dict[str, Any]) -> None:
         """Callback passed to ring_doorbell Auth; called whenever the token refreshes."""
         self._save_token_to_db(token)
+
+    # ------------------------------------------------------------------ #
+    # DB-backed listener credential storage                               #
+    # ------------------------------------------------------------------ #
+
+    def _load_listener_credentials_from_db(self) -> dict[str, Any] | None:
+        """Return the stored FCM listener credentials dict, or None if not present."""
+        db = SessionLocal()
+        try:
+            row = db.query(ListenerCredentials).filter(ListenerCredentials.id == 1).first()
+            if row is None:
+                return None
+            return json.loads(row.credentials_json)  # type: ignore[return-value]
+        except Exception:
+            logger.exception("Failed to load listener credentials from DB")
+            return None
+        finally:
+            db.close()
+
+    def _save_listener_credentials_to_db(self, credentials: dict[str, Any]) -> None:
+        """Upsert the FCM listener credentials into the DB."""
+        db = SessionLocal()
+        try:
+            row = db.query(ListenerCredentials).filter(ListenerCredentials.id == 1).first()
+            credentials_json = json.dumps(credentials)
+            if row is None:
+                db.add(ListenerCredentials(id=1, credentials_json=credentials_json))
+            else:
+                row.credentials_json = credentials_json
+                row.updated_at = datetime.utcnow()
+            db.commit()
+        except Exception:
+            logger.exception("Failed to save listener credentials to DB")
+            db.rollback()
+        finally:
+            db.close()
+
+    def _listener_credentials_updated(self, credentials: dict[str, Any]) -> None:
+        """Callback passed to RingEventListener; called when FCM credentials are refreshed."""
+        self._save_listener_credentials_to_db(credentials)
 
     # ------------------------------------------------------------------ #
     # Recording settings                                                   #
@@ -294,13 +336,18 @@ class RingManager:
             self.is_running = True
             self._autodelete_task = asyncio.create_task(self._autodelete_loop())
 
-        # Restart listener if not already running
-        if not self.is_running:
-            asyncio.create_task(self.start_listener())
+        # Start event listener
+        await self.start_listener()
 
     async def ring_logout(self) -> None:
         """Revoke the current Ring session and remove the stored token."""
         self.is_running = False
+        if self._event_listener is not None:
+            try:
+                await self._event_listener.stop()
+            except Exception:
+                logger.exception("Error stopping Ring event listener on logout")
+            self._event_listener = None
         if self.auth is not None:
             try:
                 await self.auth.async_close()
@@ -465,34 +512,57 @@ class RingManager:
             self.active_recordings.discard(device_id)
 
     # ------------------------------------------------------------------ #
-    # Listener loop                                                        #
+    # Event listener                                                       #
     # ------------------------------------------------------------------ #
+
+    def _on_event(self, event: Any) -> None:
+        """Callback invoked by RingEventListener for each incoming Ring event.
+
+        The event object has doorbot_id (device identifier) and kind (e.g. motion, ding).
+        """
+        if self.ring is None:
+            return
+        doorbot_id = getattr(event, "doorbot_id", None)
+        kind = str(getattr(event, "kind", "unknown"))
+        if doorbot_id is None:
+            return
+        device = self.ring.get_device_by_api_id(doorbot_id)
+        if device:
+            asyncio.create_task(self.capture_video(device, kind))
 
     async def start_listener(self) -> None:
         if self.ring is None:
             raise RuntimeError("Ring manager is not initialized")
 
-        if not self.is_running:
-            self.is_running = True
-        logger.info("Starting Ring event listener loop")
-        while self.is_running:
+        # Stop any existing listener before starting a new one
+        if self._event_listener is not None:
             try:
-                if self.ring is None:
-                    break
-                await self.ring.async_update_data()
-                active_alerts = self.ring.active_alerts()
-                for alert in active_alerts:
-                    device = self.ring.get_device_by_api_id(alert.doorbot_id)
-                    if device:
-                        kind = str(alert.kind)
-                        asyncio.create_task(self.capture_video(device, kind))
-                await asyncio.sleep(5)
+                await self._event_listener.stop()
             except Exception:
-                logger.exception("Error in listener loop")
-                await asyncio.sleep(10)
+                logger.exception("Error stopping previous Ring event listener")
+            self._event_listener = None
+
+        credentials = self._load_listener_credentials_from_db()
+        self._event_listener = RingEventListener(
+            self.ring,
+            credentials,
+            self._listener_credentials_updated,
+        )
+        self._event_listener.add_notification_callback(self._on_event)
+        started = await self._event_listener.start()
+        if started:
+            logger.info("Ring event listener started")
+        else:
+            logger.warning("Ring event listener failed to start")
 
     async def stop(self) -> None:
         self.is_running = False
+        if self._event_listener is not None:
+            try:
+                await self._event_listener.stop()
+            except Exception:
+                logger.exception("Error stopping Ring event listener")
+            self._event_listener = None
         if self._autodelete_task is not None and not self._autodelete_task.done():
             self._autodelete_task.cancel()
             try:

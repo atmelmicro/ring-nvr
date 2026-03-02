@@ -40,4 +40,16 @@ class RingToken(Base):
     )
 
 
+class ListenerCredentials(Base):
+    """Stores the FCM listener credentials as a JSON blob. Only one row ever exists (id=1)."""
+
+    __tablename__ = "listener_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    credentials_json: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 Base.metadata.create_all(bind=engine)
